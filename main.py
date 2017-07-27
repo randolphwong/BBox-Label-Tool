@@ -1,3 +1,4 @@
+#!/usr/bin/env python2
 #-------------------------------------------------------------------------------
 # Name:        Object bounding box label tool
 # Purpose:     Label object bboxes for ImageNet Detection data
@@ -19,6 +20,8 @@ COLORS = ['red', 'blue', 'yellow', 'pink', 'cyan', 'green', 'black']
 # image sizes for the examples
 SIZE = 256, 256
 
+OFFSET = 50
+
 class LabelTool():
     def __init__(self, master):
         # set up the main frame
@@ -36,7 +39,7 @@ class LabelTool():
         self.outDir = ''
         self.cur = 0
         self.total = 0
-        self.category = 0
+        self.category = ''
         self.imagename = ''
         self.labelfilename = ''
         self.tkimg = None
@@ -123,17 +126,17 @@ class LabelTool():
         if not dbg:
             s = self.entry.get()
             self.parent.focus()
-            self.category = int(s)
+            self.category = s
         else:
             s = r'D:\workspace\python\labelGUI'
 ##        if not os.path.isdir(s):
 ##            tkMessageBox.showerror("Error!", message = "The specified dir doesn't exist!")
 ##            return
         # get image list
-        self.imageDir = os.path.join(r'./Images', '%03d' %(self.category))
-        self.imageList = glob.glob(os.path.join(self.imageDir, '*.JPEG'))
+        self.imageDir = os.path.join(r'./Images', '{}'.format(self.category))
+        self.imageList = glob.glob(os.path.join(self.imageDir, '*.png'))
         if len(self.imageList) == 0:
-            print 'No .JPEG images found in the specified dir!'
+            print 'No .png images found in the specified dir!'
             return
 
         # default to the 1st image in the collection
@@ -141,27 +144,9 @@ class LabelTool():
         self.total = len(self.imageList)
 
          # set up output dir
-        self.outDir = os.path.join(r'./Labels', '%03d' %(self.category))
+        self.outDir = os.path.join(r'./Labels', '{}'.format(self.category))
         if not os.path.exists(self.outDir):
             os.mkdir(self.outDir)
-
-        # load example bboxes
-        self.egDir = os.path.join(r'./Examples', '%03d' %(self.category))
-        if not os.path.exists(self.egDir):
-            return
-        filelist = glob.glob(os.path.join(self.egDir, '*.JPEG'))
-        self.tmp = []
-        self.egList = []
-        random.shuffle(filelist)
-        for (i, f) in enumerate(filelist):
-            if i == 3:
-                break
-            im = Image.open(f)
-            r = min(SIZE[0] / im.size[0], SIZE[1] / im.size[1])
-            new_size = int(r * im.size[0]), int(r * im.size[1])
-            self.tmp.append(im.resize(new_size, Image.ANTIALIAS))
-            self.egList.append(ImageTk.PhotoImage(self.tmp[-1]))
-            self.egLabels[i].config(image = self.egList[-1], width = SIZE[0], height = SIZE[1])
 
         self.loadImage()
         print '%d images loaded from %s' %(self.total, s)
@@ -171,8 +156,8 @@ class LabelTool():
         imagepath = self.imageList[self.cur - 1]
         self.img = Image.open(imagepath)
         self.tkimg = ImageTk.PhotoImage(self.img)
-        self.mainPanel.config(width = max(self.tkimg.width(), 400), height = max(self.tkimg.height(), 400))
-        self.mainPanel.create_image(0, 0, image = self.tkimg, anchor=NW)
+        self.mainPanel.config(width = max(self.tkimg.width()+2*OFFSET, 400), height = max(self.tkimg.height()+2*OFFSET, 400))
+        self.mainPanel.create_image(OFFSET, OFFSET, image = self.tkimg, anchor=NW)
         self.progLabel.config(text = "%04d/%04d" %(self.cur, self.total))
 
         # load labels
@@ -188,10 +173,9 @@ class LabelTool():
                         bbox_cnt = int(line.strip())
                         continue
                     tmp = [int(t.strip()) for t in line.split()]
-##                    print tmp
                     self.bboxList.append(tuple(tmp))
-                    tmpId = self.mainPanel.create_rectangle(tmp[0], tmp[1], \
-                                                            tmp[2], tmp[3], \
+                    tmpId = self.mainPanel.create_rectangle(tmp[0] + OFFSET, tmp[1] + OFFSET, \
+                                                            tmp[2] + OFFSET, tmp[3] + OFFSET, \
                                                             width = 2, \
                                                             outline = COLORS[(len(self.bboxList)-1) % len(COLORS)])
                     self.bboxIdList.append(tmpId)
@@ -209,9 +193,23 @@ class LabelTool():
     def mouseClick(self, event):
         if self.STATE['click'] == 0:
             self.STATE['x'], self.STATE['y'] = event.x, event.y
+            if event.x < OFFSET:
+                self.STATE['x'] = OFFSET
+            if event.y < OFFSET:
+                self.STATE['y'] = OFFSET
+            if event.x > self.tkimg.width() + OFFSET:
+                self.STATE['x'] = self.tkimg.width() + OFFSET
+            if event.y > self.tkimg.height() + OFFSET:
+                self.STATE['y'] = self.tkimg.height() + OFFSET
         else:
-            x1, x2 = min(self.STATE['x'], event.x), max(self.STATE['x'], event.x)
-            y1, y2 = min(self.STATE['y'], event.y), max(self.STATE['y'], event.y)
+            x1, x2 = min(self.STATE['x'], event.x) - OFFSET,\
+                     max(self.STATE['x'], event.x) - OFFSET
+            y1, y2 = min(self.STATE['y'], event.y) - OFFSET,\
+                     max(self.STATE['y'], event.y) - OFFSET
+            x1 = max(0, x1)
+            y1 = max(0, y1)
+            x2 = x2 if x2 <= self.tkimg.width() else self.tkimg.width()
+            y2 = y2 if y2 <= self.tkimg.height() else self.tkimg.height()
             self.bboxList.append((x1, y1, x2, y2))
             self.bboxIdList.append(self.bboxId)
             self.bboxId = None
@@ -220,7 +218,7 @@ class LabelTool():
         self.STATE['click'] = 1 - self.STATE['click']
 
     def mouseMove(self, event):
-        self.disp.config(text = 'x: %d, y: %d' %(event.x, event.y))
+        self.disp.config(text = 'x: %d, y: %d' %(event.x - OFFSET, event.y - OFFSET))
         if self.tkimg:
             if self.hl:
                 self.mainPanel.delete(self.hl)
